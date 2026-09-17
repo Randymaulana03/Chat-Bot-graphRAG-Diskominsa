@@ -2,3 +2,14 @@
 .venv/
 __pycache__/
 *.pyc
+# Local test scripts
+test_*.py
+
+# Local uploaded PDFs
+._uploads_*
+
+# Local notes
+Model embedding.txt
+Neo4j-24ee2aa6-Created-2026-09-17.txt
+Supabase & Neo4.txt
+object.txt
