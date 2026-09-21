@@ -1,4 +1,9 @@
-def build_prompt(question: str, context: dict) -> str:
+def build_prompt(
+    question: str,
+    context: dict,
+    name: str | None = None
+) -> str:
+
     vector_context = context.get("vector_context", [])
     graph_context = context.get("graph_context")
 
@@ -40,6 +45,13 @@ Tugas:
 {graph.get("tasks", [])}
 """
 
+    user_info = ""
+
+    if name:
+        user_info = f"""
+Nama pengguna: {name}
+"""
+
     prompt = f"""
 Kamu adalah chatbot informasi
 Dinas Komunikasi, Informatika dan Persandian Aceh.
@@ -68,6 +80,17 @@ ATURAN JAWABAN:
    dan mudah dipahami.
 9. Jangan menyebutkan "Vector Context", "Graph Context",
    atau proses internal sistem kepada pengguna.
+10. Jika nama pengguna tersedia dan sesuai dengan konteks
+    percakapan, gunakan nama tersebut secara natural
+    dalam sapaan atau jawaban.
+11. Jangan menyebut nama pengguna secara berulang
+    jika tidak diperlukan.
+12. Jika pengguna memberikan sapaan seperti "hai" atau
+    "halo" bersama pertanyaan, balas sapaan tersebut
+    secara natural sebelum menjawab pertanyaannya.
+
+=== INFORMASI PENGGUNA ===
+{user_info}
 
 === VECTOR CONTEXT ===
 {vector_text}

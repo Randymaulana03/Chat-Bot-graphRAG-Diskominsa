@@ -7,6 +7,7 @@ from app.services.context_service import (
 )
 from app.services.prompt_service import build_prompt
 from app.services.gemini_services import generate_response
+from app.services.conversation_service import analyze_message
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ def build_sources(context: dict) -> list[dict]:
     sources = []
     seen = set()
 
-    for result in context.get("vector_context", []):
+    for result in context.get("vector_context", [])[:3]:
         source = {
             "regulation": result.get("regulation_number"),
             "pasal": result.get("pasal"),
@@ -39,7 +40,19 @@ def build_sources(context: dict) -> list[dict]:
 
 @router.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
-    context = build_context(request.question)
+    message = request.question.strip()
+
+    conversation = analyze_message(message)
+
+    if conversation.is_greeting_only:
+        return {
+            "answer": conversation.reply,
+            "sources": []
+        }
+
+    context = build_context(
+        conversation.question
+    )
 
     if not is_context_available(context):
         return {
@@ -51,8 +64,9 @@ def chat(request: ChatRequest):
         }
 
     prompt = build_prompt(
-        request.question,
-        context
+        conversation.question,
+        context,
+        conversation.name
     )
 
     try:
