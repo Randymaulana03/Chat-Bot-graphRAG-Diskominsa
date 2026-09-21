@@ -17,11 +17,7 @@ def build_sources(context: dict) -> list[dict]:
 
     for result in context.get("vector_context", []):
         source = {
-            "regulation": (
-                f"Pergub Aceh No. "
-                f"{result.get('regulation_number')} "
-                f"Tahun {result.get('year')}"
-            ),
+            "regulation": result.get("regulation_number"),
             "pasal": result.get("pasal"),
             "ayat": result.get("ayat"),
             "page": result.get("page"),
