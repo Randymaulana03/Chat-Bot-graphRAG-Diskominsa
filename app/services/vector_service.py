@@ -1,12 +1,12 @@
 from supabase import create_client
-
 from app.core.config import settings
-
 
 supabase = create_client(
     settings.SUPABASE_URL,
     settings.SUPABASE_KEY
 )
+
+SIMILARITY_THRESHOLD = 0.82
 
 
 def search_similar_chunks(
@@ -24,10 +24,19 @@ def search_similar_chunks(
     return result.data
 
 
+def has_relevant_context(results: list[dict]) -> bool:
+    if not results:
+        return False
+
+    top_similarity = results[0].get("similarity", 0)
+
+    return top_similarity >= SIMILARITY_THRESHOLD
+
+
 def insert_document_chunk(
     document_id: int,
     chunk: dict,
-    embedding: list[float],
+    embedding: list[float]
 ):
     data = {
         "document_id": document_id,
@@ -52,10 +61,7 @@ def insert_document_chunk(
     return result.data
 
 
-def get_existing_chunk_ids(
-    document_id: int
-) -> set[str]:
-
+def get_existing_chunk_ids(document_id: int) -> set[str]:
     result = (
         supabase
         .table("document_chunks")
