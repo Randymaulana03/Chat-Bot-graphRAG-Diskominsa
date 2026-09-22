@@ -31,11 +31,16 @@ def extract_name(text: str) -> str | None:
     patterns = [
         r"\bsaya bernama\s+([A-Za-z]+)",
         r"\bnama saya\s+([A-Za-z]+)",
-        r"\bsaya\s+([A-Za-z]+)",
+        r"\bsaya\s+([A-Za-z]+)(?=,)",
+        r"\bsaya\s+([A-Za-z]+)$",
     ]
 
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE,
+        )
 
         if match:
             return match.group(1).strip()

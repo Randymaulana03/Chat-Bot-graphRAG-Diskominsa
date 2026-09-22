@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
 
 
 class Source(BaseModel):
+    question: str
     regulation: str
     pasal: str | None = None
     ayat: str | None = None

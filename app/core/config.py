@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     NEO4J_URI: str = ""
     NEO4J_USERNAME: str = ""
     NEO4J_PASSWORD: str = ""
+    ALLOWED_ORIGINS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
