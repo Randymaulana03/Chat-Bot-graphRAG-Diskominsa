@@ -56,23 +56,42 @@ def get_unit_context(unit_name: str):
         name: $unit_name
     })
 
-    OPTIONAL MATCH (organization:Organization)-[:MEMILIKI_UPTD]->(unit)
+        OPTIONAL MATCH (organization:Organization)-[:MEMILIKI_UPTD]->(unit)
+        OPTIONAL MATCH (parent_unit:Unit)-[:MEMILIKI_UNIT]->(unit)
+        OPTIONAL MATCH (unit)-[:MEMILIKI_UNIT]->(child:Unit)
+        OPTIONAL MATCH (child)-[:BERASAL_DARI]->(child_source:Source)
+        OPTIONAL MATCH (unit)-[parent_rel:BERADA_DI_BAWAH]->(parent:Position)
+        OPTIONAL MATCH (unit)-[:MEMILIKI_TUGAS]->(task:Task)
+        OPTIONAL MATCH (task)-[:BERASAL_DARI]->(source:Source)
 
-    OPTIONAL MATCH (parent_unit:Unit)-[:MEMILIKI_UNIT]->(unit)
+        RETURN
+            unit.name AS unit,
+            collect(DISTINCT organization.name) AS organizations,
+            collect(DISTINCT parent_unit.name) AS parent_units,
 
-    OPTIONAL MATCH (unit)-[:MEMILIKI_UNIT]->(child:Unit)
+            collect(DISTINCT {
+                name: parent.name,
+                regulation: parent_rel.regulation,
+                pasal: parent_rel.pasal,
+                ayat: parent_rel.ayat,
+                page: parent_rel.page
+            }) AS parents,
 
-    OPTIONAL MATCH (unit)-[:BERADA_DI_BAWAH]->(parent:Position)
+            collect(DISTINCT {
+                name: child.name,
+                regulation: child_source.regulation,
+                pasal: child_source.pasal,
+                ayat: child_source.ayat,
+                page: child_source.page
+            }) AS children,
 
-    OPTIONAL MATCH (unit)-[:MEMILIKI_TUGAS]->(task:Task)
-
-    RETURN
-        unit.name AS unit,
-        collect(DISTINCT organization.name) AS organizations,
-        collect(DISTINCT parent_unit.name) AS parent_units,
-        collect(DISTINCT parent.name) AS parents,
-        collect(DISTINCT child.name) AS children,
-        collect(DISTINCT task.name) AS tasks
+            collect(DISTINCT {
+                name: task.name,
+                regulation: source.regulation,
+                pasal: source.pasal,
+                ayat: source.ayat,
+                page: source.page
+        }) AS tasks
     """
 
     with driver.session() as session:
@@ -119,6 +138,11 @@ def retrieve_graph_context(question: str):
     if not entities:
         return None
 
+    intent = detect_graph_intent(question)
+
+    if intent is None:
+        return None
+
     contexts = []
 
     for item in entities:
@@ -128,11 +152,24 @@ def retrieve_graph_context(question: str):
         if "Unit" not in labels:
             continue
 
-        context = get_unit_context(entity)
+        context = None
+
+        if intent == "task":
+            context = get_unit_task_context(entity)
+
+        elif intent == "leadership":
+            context = get_unit_leadership_context(entity)
+
+        elif intent == "structure":
+            context = get_unit_structure_context(entity)
+
+        elif intent == "organization":
+            context = get_unit_context(entity)
 
         if context is not None:
             contexts.append({
                 "entity": entity,
+                "intent": intent,
                 "context": context,
             })
 
@@ -141,13 +178,32 @@ def retrieve_graph_context(question: str):
 
     return contexts
 
-def is_graph_context_relevant(question: str, graph_context: list[dict]) -> bool:
+def is_graph_context_relevant(
+    question: str,
+    graph_context: list[dict]
+) -> bool:
+
     if not graph_context:
         return False
 
+    return detect_graph_intent(question) is not None
+    
+def detect_graph_intent(question: str) -> str | None:
     question_lower = question.lower()
 
-    # Pertanyaan yang membutuhkan struktur organisasi
+    task_keywords = [
+        "tugas",
+        "fungsi",
+    ]
+
+    leadership_keywords = [
+        "siapa yang memimpin",
+        "dipimpin siapa",
+        "di bawah siapa",
+        "bertanggung jawab kepada siapa",
+        "memimpin",
+    ]
+
     structure_keywords = [
         "unit",
         "seksi",
@@ -158,23 +214,6 @@ def is_graph_context_relevant(question: str, graph_context: list[dict]) -> bool:
         "terdapat",
     ]
 
-    # Pertanyaan tentang tugas/fungsi
-    task_keywords = [
-        "tugas",
-        "fungsi",
-    ]
-
-    # Pertanyaan tentang kepemimpinan / hubungan organisasi
-    relation_keywords = [
-        "di bawah siapa",
-        "bertanggung jawab kepada siapa",
-        "dipimpin siapa",
-        "siapa yang memimpin",
-        "memimpin",
-        "hubungan",
-    ]
-
-    # Pertanyaan tentang organisasi tempat unit berada
     organization_keywords = [
         "organisasi",
         "dinas",
@@ -182,32 +221,121 @@ def is_graph_context_relevant(question: str, graph_context: list[dict]) -> bool:
         "bagian dari",
     ]
 
-    # Pertanyaan yang meminta data spesifik yang tidak
-    # direpresentasikan oleh graph kita
-    unsupported_keywords = [
-        "nama",
-        "berapa",
-        "jumlah",
-        "alamat",
-        "lokasi",
-        "anggaran",
-        "pegawai",
-        "orang",
-    ]
+    if any(
+        keyword in question_lower
+        for keyword in task_keywords
+    ):
+        return "task"
 
-    if any(keyword in question_lower for keyword in unsupported_keywords):
-        return False
+    if any(
+        keyword in question_lower
+        for keyword in leadership_keywords
+    ):
+        return "leadership"
 
-    if any(keyword in question_lower for keyword in structure_keywords):
-        return True
+    if any(
+        keyword in question_lower
+        for keyword in structure_keywords
+    ):
+        return "structure"
 
-    if any(keyword in question_lower for keyword in task_keywords):
-        return True
+    if any(
+        keyword in question_lower
+        for keyword in organization_keywords
+    ):
+        return "organization"
 
-    if any(keyword in question_lower for keyword in relation_keywords):
-        return True
+    return None
 
-    if any(keyword in question_lower for keyword in organization_keywords):
-        return True
+def get_unit_task_context(unit_name: str):
+    query = """
+    MATCH (unit:Unit {
+        name: $unit_name
+    })-[rel:MEMILIKI_TUGAS]->(task:Task)
+    OPTIONAL MATCH (task)-[:BERASAL_DARI]->(source:Source)
 
-    return False
+    RETURN
+        unit.name AS unit,
+        collect(DISTINCT {
+            name: task.name,
+            regulation: source.regulation,
+            pasal: source.pasal,
+            ayat: source.ayat,
+            page: source.page
+        }) AS tasks
+    """
+
+    with driver.session() as session:
+        result = session.run(
+            query,
+            unit_name=unit_name
+        )
+
+        record = result.single()
+
+        if record is None:
+            return None
+
+        return record.data()
+
+def get_unit_leadership_context(unit_name: str):
+    query = """
+    MATCH (unit:Unit {
+        name: $unit_name
+    })-[rel:BERADA_DI_BAWAH]->(position:Position)
+
+    RETURN
+        unit.name AS unit,
+        collect(DISTINCT {
+            name: position.name,
+            regulation: rel.regulation,
+            pasal: rel.pasal,
+            ayat: rel.ayat,
+            page: rel.page
+        }) AS parents
+    """
+
+    with driver.session() as session:
+        result = session.run(
+            query,
+            unit_name=unit_name
+        )
+
+        record = result.single()
+
+        if record is None:
+            return None
+
+        return record.data()
+
+def get_unit_structure_context(unit_name: str):
+    query = """
+    MATCH (unit:Unit {
+        name: $unit_name
+    })-[:MEMILIKI_UNIT]->(child:Unit)
+
+    OPTIONAL MATCH (child)-[:BERASAL_DARI]->(source:Source)
+
+    RETURN
+        unit.name AS unit,
+        collect(DISTINCT {
+            name: child.name,
+            regulation: source.regulation,
+            pasal: source.pasal,
+            ayat: source.ayat,
+            page: source.page
+        }) AS children
+    """
+
+    with driver.session() as session:
+        result = session.run(
+            query,
+            unit_name=unit_name
+        )
+
+        record = result.single()
+
+        if record is None:
+            return None
+
+        return record.data()

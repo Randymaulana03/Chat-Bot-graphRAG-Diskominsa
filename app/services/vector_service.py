@@ -74,3 +74,27 @@ def get_existing_chunk_ids(document_id: int) -> set[str]:
         row["chunk_id"]
         for row in result.data
     }
+
+def update_chunk_metadata(
+    document_id: int,
+    chunk_id: str,
+    metadata: dict
+):
+    data = {
+        "bab": metadata["bab"],
+        "bagian": metadata["bagian"],
+        "paragraf": metadata["paragraf"],
+        "pasal": metadata["pasal"],
+        "ayat": metadata["ayat"],
+        "page": metadata["page"],
+    }
+
+    return (
+        supabase
+        .table("document_chunks")
+        .update(data)
+        .eq("document_id", document_id)
+        .eq("chunk_id", chunk_id)
+        .select("id, chunk_id")
+        .execute()
+    )
