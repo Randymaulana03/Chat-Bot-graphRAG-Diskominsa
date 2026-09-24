@@ -24,10 +24,28 @@ Isi: {result.get("content")}
         for i, item in enumerate(graph_context, start=1):
             entity = item.get("entity")
             graph = item.get("context", {})
+            intent = item.get("intent")
 
             tasks = graph.get("tasks", [])
+            children = graph.get("children", [])
+            parents = graph.get("parents", [])
+            parent_units = graph.get("parent_units", [])
 
             task_text = ""
+            child_text = ""
+            parent_text = ""
+            relationship_text = ""
+
+            if intent == "relationship":
+                organization = graph.get("organization")
+                unit = graph.get("unit")
+
+                if organization and unit:
+                        relationship_text = f"""
+                Organisasi: {organization}
+                UPTD: {unit}
+                Relasi: MEMILIKI_UPTD
+                """
 
             for task in tasks:
                 if not task.get("name"):
@@ -46,7 +64,7 @@ Isi: {result.get("content")}
 Entity: {entity}
 
 Organisasi:
-{graph.get("organizations", [])}
+{graph.get("organization", [])}
 
 Parent Unit:
 {graph.get("parent_units", [])}
@@ -59,6 +77,9 @@ Unit di dalam:
 
 Tugas:
 {task_text}
+
+Relationship:
+{relationship_text}
 """
 
     user_info = ""
@@ -104,6 +125,20 @@ ATURAN JAWABAN:
 12. Jika pengguna memberikan sapaan seperti "hai" atau
     "halo" bersama pertanyaan, balas sapaan tersebut
     secara natural sebelum menjawab pertanyaannya.
+13. Jika menggunakan greeting, letakkan greeting sebagai
+    paragraf terpisah dari jawaban.
+
+14. Jangan memasukkan greeting ke dalam numbered list
+    atau bullet list.
+
+15. Jika jawaban berupa daftar, letakkan kalimat pembuka
+    terlebih dahulu, kemudian mulai daftar dari nomor 1.
+
+16. Gunakan Markdown secara konsisten:
+    - numbered list untuk daftar yang berurutan;
+    - bullet list untuk daftar yang tidak berurutan;
+    - paragraf terpisah untuk penjelasan;
+    - bold hanya untuk bagian yang penting.
 
 === INFORMASI PENGGUNA ===
 {user_info}
@@ -162,79 +197,92 @@ Isi: {result.get("content")}
         graph_text = ""
 
         if graph_context:
-            for i, item_graph in enumerate(
-                graph_context,
-                start=1
-            ):
-                entity = item_graph.get("entity")
-                graph = item_graph.get("context", {})
+            for i, item in enumerate(graph_context, start=1):
+                entity = item.get("entity")
+                intent = item.get("intent")
+                graph = item.get("context", {})
 
                 tasks = graph.get("tasks", [])
                 children = graph.get("children", [])
                 parents = graph.get("parents", [])
-                parent_units = graph.get(
-                    "parent_units",
-                    []
-                )
+                parent_units = graph.get("parent_units", [])
 
                 task_text = ""
+                child_text = ""
+                parent_text = ""
+                relationship_text = ""
 
+                # Tugas
                 for task in tasks:
                     if not task.get("name"):
                         continue
 
                     task_text += f"""
-- {task.get("name")}
-  Regulasi: {task.get("regulation")}
-  Pasal: {task.get("pasal")}
-  Ayat: {task.get("ayat")}
-  Halaman: {task.get("page")}
-"""
+        - {task.get("name")}
+        Sumber: {task.get("regulation")}
+        Pasal: {task.get("pasal")}
+        Ayat: {task.get("ayat")}
+        Halaman: {task.get("page")}
+        """
 
-                child_text = ""
-
+                # Unit di dalam
                 for child in children:
                     if not child.get("name"):
                         continue
 
                     child_text += f"""
-- {child.get("name")}
-  Regulasi: {child.get("regulation")}
-  Pasal: {child.get("pasal")}
-  Ayat: {child.get("ayat")}
-  Halaman: {child.get("page")}
-"""
+        - {child.get("name")}
+        Sumber: {child.get("regulation")}
+        Pasal: {child.get("pasal")}
+        Ayat: {child.get("ayat")}
+        Halaman: {child.get("page")}
+        """
 
-                parent_text = ""
-
+                # Parent position
                 for parent in parents:
                     if not parent.get("name"):
                         continue
 
                     parent_text += f"""
-- {parent.get("name")}
-  Regulasi: {parent.get("regulation")}
-  Pasal: {parent.get("pasal")}
-  Ayat: {parent.get("ayat")}
-  Halaman: {parent.get("page")}
-"""
+        - {parent.get("name")}
+        Sumber: {parent.get("regulation")}
+        Pasal: {parent.get("pasal")}
+        Ayat: {parent.get("ayat")}
+        Halaman: {parent.get("page")}
+        """
+
+                # Relationship
+                if intent == "relationship":
+                    organization = graph.get("organization")
+                    unit = graph.get("unit")
+
+                    if organization and unit:
+                        relationship_text = f"""
+        Organisasi: {organization}
+        UPTD: {unit}
+        Relasi: MEMILIKI_UPTD
+        """
 
                 graph_text += f"""
-[Graph Entity {i}]
-Entity: {entity}
+        [Graph Entity {i}]
+        Entity: {entity}
+        Intent: {intent}
 
-Parent Unit:
-{parent_units}
+        Parent Unit:
+        {parent_units}
 
-Parent Position:
-{parent_text}
+        Parent Position:
+        {parent_text}
 
-Unit di dalam:
-{child_text}
+        Unit di dalam:
+        {child_text}
 
-Tugas:
-{task_text}
-"""
+        Tugas:
+        {task_text}
+
+        Relationship:
+        {relationship_text}
+        """
 
         question_sections += f"""
 ========================================
@@ -313,26 +361,13 @@ Basis pengetahuan chatbot hanya berasal dari:
     "Graph Context", embedding, retrieval,
     database, atau proses internal sistem.
 
-13. Jika nama pengguna tersedia dan sesuai dengan
-    konteks percakapan, gunakan nama tersebut
-    secara natural.
-
-14. Jangan menyebut nama pengguna secara berulang.
-
-15. Jika terdapat beberapa pertanyaan, pisahkan
-    jawaban berdasarkan nomor pertanyaan agar
-    setiap jawaban mudah dipahami.
-
-=== KONTEKS PERTANYAAN ===
-{question_sections}
-
-=== INSTRUKSI AKHIR ===
-
-Jawab seluruh pertanyaan di atas berdasarkan
-context masing-masing.
-
-Jangan melewatkan pertanyaan.
-Jangan mencampurkan informasi antar pertanyaan.
+13. Jika nama pengguna tersedia dan sesuai dengan konteks
+    percakapan, gunakan nama tersebut secara natural.
 """
 
+    # Tambahan penutup string literal dan return statement yang sempat terpotong
+    prompt += f"""
+=== SECTIONS ===
+{question_sections}
+"""
     return prompt.strip()

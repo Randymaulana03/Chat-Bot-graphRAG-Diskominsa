@@ -161,7 +161,6 @@ def build_sources(
 def build_multi_question_sources(
     question_results: list[dict]
 ) -> list[dict]:
-
     sources = []
     seen = set()
 
@@ -173,7 +172,10 @@ def build_multi_question_sources(
 
         is_task = any(
             keyword in question_lower
-            for keyword in ["tugas", "fungsi"]
+            for keyword in [
+                "tugas",
+                "fungsi",
+            ]
         )
 
         is_leadership = any(
@@ -184,6 +186,18 @@ def build_multi_question_sources(
                 "di bawah siapa",
                 "bertanggung jawab kepada siapa",
                 "memimpin",
+            ]
+        )
+
+        is_relationship = any(
+            keyword in question_lower
+            for keyword in [
+                "hubungan",
+                "hubungannya",
+                "berhubungan dengan",
+                "kaitannya dengan",
+                "kaitan dengan",
+                "relasinya dengan",
             ]
         )
 
@@ -210,7 +224,10 @@ def build_multi_question_sources(
             # TASK / FUNCTION
             # ----------------------------------------------
             if is_task:
-                if pasal != "Pasal 5":
+                if not (
+                    pasal == "Pasal 5"
+                    and ayat == "(1)"
+                ):
                     continue
 
             # ----------------------------------------------
@@ -220,10 +237,14 @@ def build_multi_question_sources(
                 if pasal != "Pasal 3":
                     continue
 
-            else:
-                # Untuk sementara, kalau intent belum
-                # dikenali, gunakan hasil vector.
-                pass
+            # ----------------------------------------------
+            # RELATIONSHIP
+            # ----------------------------------------------
+            elif is_relationship:
+                # Relationship saat ini ditangani oleh graph.
+                # Jangan mengambil vector source yang tidak
+                # secara eksplisit mendukung relationship.
+                continue
 
             source = {
                 "question": question,
@@ -269,25 +290,30 @@ def build_multi_question_sources(
                     "tasks",
                     []
                 ):
-                    regulation = task.get(
-                        "regulation"
-                    )
+                    regulation = task.get("regulation")
+                    pasal = task.get("pasal")
+                    ayat = task.get("ayat")
+                    page = task.get("page")
 
                     if not regulation:
+                        continue
+
+                    if not pasal and not ayat and not page:
                         continue
 
                     source = {
                         "question": question,
                         "regulation": regulation,
-                        "pasal": task.get("pasal"),
-                        "ayat": task.get("ayat"),
-                        "page": task.get("page"),
+                        "pasal": pasal,
+                        "ayat": ayat,
+                        "page": page,
                     }
 
                     key = (
                         question,
                         source["regulation"],
                         source["pasal"],
+                        source["ayat"],
                         source["page"],
                     )
 
@@ -316,6 +342,41 @@ def build_multi_question_sources(
                         "pasal": parent.get("pasal"),
                         "ayat": parent.get("ayat"),
                         "page": parent.get("page"),
+                    }
+
+                    key = (
+                        question,
+                        source["regulation"],
+                        source["pasal"],
+                        source["ayat"],
+                        source["page"],
+                    )
+
+                    if key not in seen:
+                        seen.add(key)
+                        sources.append(source)
+
+            # ----------------------------------------------
+            # RELATIONSHIP
+            # ----------------------------------------------
+            elif intent == "relationship":
+                for graph_source in graph.get(
+                    "sources",
+                    []
+                ):
+                    regulation = graph_source.get(
+                        "regulation"
+                    )
+
+                    if not regulation:
+                        continue
+
+                    source = {
+                        "question": question,
+                        "regulation": regulation,
+                        "pasal": None,
+                        "ayat": None,
+                        "page": None,
                     }
 
                     key = (
@@ -369,11 +430,20 @@ def chat(request: ChatRequest):
     )
 
     if not has_any_context:
-        return {
-            "answer": (
+        if conversation.name:
+            answer = (
+                f"Halo {conversation.name}.\n\n"
                 "Informasi tersebut tidak ditemukan "
                 "dalam basis pengetahuan."
-            ),
+            )
+        else:
+            answer = (
+                "Informasi tersebut tidak ditemukan "
+                "dalam basis pengetahuan."
+            )
+
+        return {
+            "answer": answer,
             "sources": []
         }
 
