@@ -29,10 +29,10 @@ def detect_greeting(text: str) -> bool:
 
 def extract_name(text: str) -> str | None:
     patterns = [
-        r"\bsaya bernama\s+([A-Za-z]+)",
-        r"\bnama saya\s+([A-Za-z]+)",
-        r"\bsaya\s+([A-Za-z]+)(?=,)",
-        r"\bsaya\s+([A-Za-z]+)$",
+        r"\b(?:saya|aku) bernama\s+([A-Za-z]+)",
+        r"\bnama (?:saya|aku)\s+([A-Za-z]+)",
+        r"\b(?:saya|aku)\s+([A-Za-z]+)(?=,)",
+        r"\b(?:saya|aku)\s+([A-Za-z]+)$",
     ]
 
     for pattern in patterns:
@@ -43,7 +43,30 @@ def extract_name(text: str) -> str | None:
         )
 
         if match:
-            return match.group(1).strip()
+            name = match.group(1).strip()
+
+            # Kata-kata yang tidak mungkin merupakan nama
+            invalid_names = {
+                "ingin",
+                "mau",
+                "hendak",
+                "tahu",
+                "mengetahui",
+                "bertanya",
+                "menanyakan",
+                "penasaran",
+                "tanya",
+                "lihat",
+                "melihat",
+                "cari",
+                "mencari",
+                "mengetahui",
+            }
+
+            if name.lower() in invalid_names:
+                continue
+
+            return name
 
     return None
 
@@ -127,9 +150,9 @@ def _clean_question(
 
     if name:
         patterns = [
-            rf"\bsaya bernama\s+{re.escape(name)}[,!.\s]*",
-            rf"\bnama saya\s+{re.escape(name)}[,!.\s]*",
-            rf"\bsaya\s+{re.escape(name)}[,!.\s]*",
+            rf"\b(?:saya|aku) bernama\s+{re.escape(name)}[,!.\s]*",
+            rf"\bnama (?:saya|aku)\s+{re.escape(name)}[,!.\s]*",
+            rf"\b(?:saya|aku)\s+{re.escape(name)}[,!.\s]*",
         ]
 
         for pattern in patterns:
