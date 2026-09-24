@@ -88,32 +88,35 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    // 1. Kunci layar setinggi 100vh dan matikan scroll penuh halaman (overflow-hidden)
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
       <ChatHeader />
 
-      <main className="mx-auto flex min-h-[calc(100vh-73px)] max-w-5xl flex-col px-6">
-        <div className="flex-1 overflow-y-auto py-8">
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <ChatMessage
-                key={message.id}
-                role={message.role}
-                content={message.content}
-                sources={message.sources}
-              />
-            ))}
+      {/* 2. Container pesan (Scrollable) */}
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col overflow-y-auto px-6 py-6">
+        <div className="space-y-4">
+          {messages.map((message) => (
+            <ChatMessage
+              key={message.id}
+              role={message.role}
+              content={message.content}
+              sources={message.sources}
+            />
+          ))}
 
-            {loading && (
-              <ChatMessage
-                role="assistant"
-                content="Sedang mencari informasi..."
-                sources={[]}
-              />
-            )}
-          </div>
+          {loading && (
+            <ChatMessage
+              role="assistant"
+              content="Sedang mencari informasi..."
+              sources={[]}
+            />
+          )}
         </div>
+      </main>
 
-        <div className="pb-6">
+      {/* 3. Area Input (Fixed & Terkunci di Bawah) */}
+      <div className="border-t border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
+        <div className="mx-auto max-w-5xl">
           <ChatInput
             value={input}
             onChange={setInput}
@@ -121,7 +124,7 @@ function App() {
             disabled={loading}
           />
         </div>
-      </main>
+      </div>
     </div>
   )
 }
