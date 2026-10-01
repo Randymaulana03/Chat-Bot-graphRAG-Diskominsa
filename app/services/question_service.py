@@ -117,6 +117,24 @@ def normalize_question(question: str) -> str:
         question,
         flags=re.IGNORECASE,
     )
+    question = re.sub(
+        r"\bSeksi\s+Infrastruktur\b(?!\s+dan\s+Teknologi\b)",
+        "Seksi Infrastruktur dan Teknologi",
+        question,
+        flags=re.IGNORECASE,
+    )
+    question = re.sub(
+        r"\bSeksi\s+Keamanan\s+Informasi\b(?!\s+E-Government\b)",
+        "Seksi Keamanan Informasi E-Government",
+        question,
+        flags=re.IGNORECASE,
+    )
+    question = re.sub(
+        r"\bSeksi\s+Pengelolaan\s+Data\b(?!\s+dan\s+Integrasi\b)",
+        "Seksi Pengelolaan Data dan Integrasi Sistem Informasi",
+        question,
+        flags=re.IGNORECASE,
+    )
 
     return question
 

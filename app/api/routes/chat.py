@@ -17,6 +17,7 @@ from app.core.config import settings
 
 
 
+
 router = APIRouter()
 groq_client = Groq(api_key=settings.GROQ_API_KEY)
 
@@ -284,7 +285,7 @@ def chat(request: ChatRequest):
         sources = []
     else:
         sources = build_multi_question_sources(question_results)
-
+    
     # 4. Return response ke API
     return {
         "answer": answer,
