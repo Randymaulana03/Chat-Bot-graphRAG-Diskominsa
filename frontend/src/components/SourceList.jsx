@@ -32,43 +32,52 @@ function SourceList({ sources = [] }) {
                 {question}
               </p>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 {questionSources.map((source, index) => (
                   <div
                     key={index}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
                   >
-                    <span className="font-medium text-slate-700">
-                      {source.regulation}
-                    </span>
+                    <div>
+                      <span className="font-medium text-slate-700">
+                        {source.regulation}
+                      </span>
 
-                    {source.pasal && (
-                      <>
-                        <span className="mx-1 text-slate-300">
-                          ·
-                        </span>
-                        <span>{source.pasal}</span>
-                      </>
-                    )}
+                      {source.pasal && (
+                        <>
+                          <span className="mx-1 text-slate-300">
+                            ·
+                          </span>
+                          <span>{source.pasal}</span>
+                        </>
+                      )}
 
-                    {source.ayat && (
-                      <>
-                        <span className="mx-1 text-slate-300">
-                          ·
-                        </span>
-                        <span>
-                          Ayat {source.ayat.replace(/[()]/g, "")}
-                        </span>
-                      </>
-                    )}
+                      {source.ayat && (
+                        <>
+                          <span className="mx-1 text-slate-300">
+                            ·
+                          </span>
+                          <span>
+                            Ayat {source.ayat.replace(/[()]/g, "")}
+                          </span>
+                        </>
+                      )}
 
-                    {source.page && (
-                      <>
-                        <span className="mx-1 text-slate-300">
-                          ·
-                        </span>
-                        <span>Halaman {source.page}</span>
-                      </>
+                      {source.page && (
+                        <>
+                          <span className="mx-1 text-slate-300">
+                            ·
+                          </span>
+                          <span>Halaman {source.page}</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Badge +N jika ada sisa sumber yang dipotong backend */}
+                    {source.more_count > 0 && (
+                      <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200">
+                        +{source.more_count}
+                      </span>
                     )}
                   </div>
                 ))}
