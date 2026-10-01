@@ -1,55 +1,6 @@
 from app.core.neo4j_client import driver
 
 
-def get_unit_task(task_name: str):
-    query = """
-    MATCH (unit:Unit)-[:MEMILIKI_TUGAS]->(task:Task)
-    WHERE task.name = $task_name
-    RETURN unit.name AS unit, task.name AS task
-    """
-
-    with driver.session() as session:
-        result = session.run(
-            query,
-            task_name=task_name
-        )
-
-        return [record.data() for record in result]
-
-def get_unit_parent(unit_name: str):
-    query = """
-    MATCH (unit:Unit {
-        name: $unit_name
-    })-[:BERADA_DI_BAWAH]->(position:Position)
-    RETURN unit.name AS unit,
-           position.name AS parent
-    """
-
-    with driver.session() as session:
-        result = session.run(
-            query,
-            unit_name=unit_name
-        )
-
-        return [record.data() for record in result]
-
-def get_unit_children(unit_name: str):
-    query = """
-    MATCH (parent:Unit {
-        name: $unit_name
-    })-[:MEMILIKI_UNIT]->(unit:Unit)
-    RETURN parent.name AS parent,
-           unit.name AS unit
-    """
-
-    with driver.session() as session:
-        result = session.run(
-            query,
-            unit_name=unit_name
-        )
-
-        return [record.data() for record in result]
-
 def get_unit_context(unit_name: str):
     query = """
     MATCH (unit:Unit {
@@ -158,6 +109,9 @@ def retrieve_graph_context(question: str):
             elif intent == "leadership" and "Unit" in labels:
                 context = get_unit_leadership_context(entity)
 
+            elif intent == "leadership" and "Organization" in labels:
+                context = get_organization_leadership_context(entity)
+
             elif intent == "parent" and "Unit" in labels:
                 context = get_unit_parent_unit_context(entity)
 
@@ -166,6 +120,9 @@ def retrieve_graph_context(question: str):
 
             elif intent == "organization" and "Unit" in labels:
                 context = get_unit_context(entity)
+
+            elif intent == "organization" and "Organization" in labels:
+                context = get_organization_context(entity)
 
             elif intent == "relationship" and "Unit" in labels:
                 context = get_unit_organization_context(entity)
@@ -181,16 +138,6 @@ def retrieve_graph_context(question: str):
         return None
 
     return contexts
-
-def is_graph_context_relevant(
-    question: str,
-    graph_context: list[dict]
-) -> bool:
-
-    if not graph_context:
-        return False
-
-    return bool(detect_graph_intents(question))
 
 def detect_graph_intents(question: str) -> list[str]:
     question_lower = question.lower()
@@ -285,8 +232,6 @@ def detect_graph_intents(question: str) -> list[str]:
         "yang memimpin",
         "pihak yang memimpin",
         "bertanggung jawab kepada",
-        "di bawah siapa",
-        "dibawah siapa",
         "siapa yang ngepalai",
         "siapa yang memimpin unit ini",
         "siapa kepala",
@@ -370,6 +315,10 @@ def detect_graph_intents(question: str) -> list[str]:
     ]
 
     parent_keywords = [
+        "berada di bawah siapa",
+        "berada dibawah siapa",
+        "di bawah siapa",
+        "dibawah siapa",
         "berada di bidang apa",
         "berada di bawah bidang apa",
         "termasuk bidang apa",
@@ -423,22 +372,49 @@ def get_unit_task_context(unit_name: str):
     query = """
     MATCH (unit:Unit {
         name: $unit_name
-    })-[:MEMILIKI_TUGAS]->(task:Task)
+    })
 
-    OPTIONAL MATCH (task)-[:BERASAL_DARI]->(source:Source)
+    OPTIONAL MATCH (unit)-[:MEMILIKI_TUGAS]->(direct_task:Task)
+    OPTIONAL MATCH (unit)-[:MEMILIKI_UNIT]->(child:Unit)
+                         -[:MEMILIKI_TUGAS]->(child_task:Task)
+
+    WITH
+        unit,
+        collect(DISTINCT direct_task) AS direct_tasks,
+        collect(DISTINCT {
+            unit: child,
+            task: child_task
+        }) AS child_tasks
 
     RETURN
         unit.name AS unit,
-        collect({
-            name: task.name,
-            regulation: coalesce(
-                task.regulation,
-                source.regulation
-            ),
-            pasal: task.pasal,
-            ayat: task.ayat,
-            page: task.page
-        }) AS tasks
+
+        [
+            task IN direct_tasks
+            WHERE task IS NOT NULL |
+            {
+                unit: unit.name,
+                name: task.name,
+                regulation: task.regulation,
+                pasal: task.pasal,
+                ayat: task.ayat,
+                page: task.page
+            }
+        ]
+        +
+        [
+            item IN child_tasks
+            WHERE item.unit IS NOT NULL
+              AND item.task IS NOT NULL |
+            {
+                unit: item.unit.name,
+                name: item.task.name,
+                regulation: item.task.regulation,
+                pasal: item.task.pasal,
+                ayat: item.task.ayat,
+                page: item.task.page
+            }
+        ] AS tasks
     """
 
     with driver.session() as session:
@@ -468,7 +444,7 @@ def get_unit_leadership_context(unit_name: str):
             pasal: rel.pasal,
             ayat: rel.ayat,
             page: rel.page
-        }) AS parents
+        }) AS leaders
     """
 
     with driver.session() as session:
@@ -548,21 +524,34 @@ def get_organization_leadership_context(organization_name: str):
 
 def get_unit_parent_unit_context(unit_name: str):
     query = """
-    MATCH (parent:Unit)-[:MEMILIKI_UNIT]->(unit:Unit {
+    MATCH (unit:Unit {
         name: $unit_name
     })
 
-    OPTIONAL MATCH (parent)-[:BERASAL_DARI]->(source:Source)
+    OPTIONAL MATCH (parent:Unit)-[:MEMILIKI_UNIT]->(unit)
+
+    OPTIONAL MATCH (unit)-[under_rel:BERADA_DI_BAWAH]->(position:Position)
+
+    OPTIONAL MATCH (unit)-[:BERASAL_DARI]->(source:Source)
 
     RETURN
         unit.name AS unit,
+
         collect(DISTINCT {
             name: parent.name,
             regulation: source.regulation,
             pasal: source.pasal,
             ayat: source.ayat,
             page: source.page
-        }) AS parents
+        }) AS parents,
+
+        collect(DISTINCT {
+            name: position.name,
+            regulation: under_rel.regulation,
+            pasal: under_rel.pasal,
+            ayat: under_rel.ayat,
+            page: under_rel.page
+        }) AS leaders
     """
 
     with driver.session() as session:
@@ -576,7 +565,57 @@ def get_unit_parent_unit_context(unit_name: str):
         if record is None:
             return None
 
+        data = record.data()
+
+        data["parents"] = [
+            parent
+            for parent in data.get("parents", [])
+            if parent.get("name")
+        ]
+
+        data["leaders"] = [
+            leader
+            for leader in data.get("leaders", [])
+            if leader.get("name")
+        ]
+
+        return data
+
+
+def get_organization_context(organization_name: str):
+    query = """
+    MATCH (organization:Organization {
+        name: $organization_name
+    })
+
+    OPTIONAL MATCH (position:Position)-[lead_rel:MEMIMPIN]->(organization)
+    OPTIONAL MATCH (organization)-[:MEMILIKI_UPTD]->(unit:Unit)
+
+    RETURN
+        organization.name AS organization,
+        collect(DISTINCT {
+            name: position.name,
+            regulation: lead_rel.regulation,
+            pasal: lead_rel.pasal,
+            ayat: lead_rel.ayat,
+            page: lead_rel.page
+        }) AS leaders,
+        collect(DISTINCT unit.name) AS units
+    """
+
+    with driver.session() as session:
+        result = session.run(
+            query,
+            organization_name=organization_name
+        )
+
+        record = result.single()
+
+        if record is None:
+            return None
+
         return record.data()
+
 
 def get_unit_organization_context(unit_name: str):
     query = """

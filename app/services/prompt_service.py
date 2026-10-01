@@ -1,373 +1,182 @@
-def build_prompt(
-    question: str,
-    context: dict,
-    name: str | None = None
-) -> str:
-
-    vector_context = context.get("vector_context", [])
-    graph_context = context.get("graph_context")
-
-    vector_text = ""
-
-    for i, result in enumerate(vector_context, start=1):
-        vector_text += f"""
-[Vector Result {i}]
-Pasal: {result.get("pasal")}
-Ayat: {result.get("ayat")}
-Halaman: {result.get("page")}
-Isi: {result.get("content")}
-"""
-
-    graph_text = ""
-
-    if graph_context:
-        for i, item in enumerate(graph_context, start=1):
-            entity = item.get("entity")
-            graph = item.get("context", {})
-            intent = item.get("intent")
-
-            tasks = graph.get("tasks", [])
-            children = graph.get("children", [])
-            parents = graph.get("parents", [])
-            parent_units = graph.get("parent_units", [])
-
-            task_text = ""
-            child_text = ""
-            parent_text = ""
-            relationship_text = ""
-
-            if intent == "relationship":
-                organization = graph.get("organization")
-                unit = graph.get("unit")
-
-                if organization and unit:
-                        relationship_text = f"""
-                Organisasi: {organization}
-                UPTD: {unit}
-                Relasi: MEMILIKI_UPTD
-                """
-
-            for task in tasks:
-                if not task.get("name"):
-                    continue
-
-                task_text += f"""
-- {task.get("name")}
-  Sumber: {task.get("regulation")}
-  Pasal: {task.get("pasal")}
-  Ayat: {task.get("ayat")}
-  Halaman: {task.get("page")}
-"""
-
-            graph_text += f"""
-[Graph Entity {i}]
-Entity: {entity}
-
-Organisasi:
-{graph.get("organization", [])}
-
-Parent Unit:
-{graph.get("parent_units", [])}
-
-Parent Position:
-{graph.get("parents", [])}
-
-Unit di dalam:
-{graph.get("children", [])}
-
-Tugas:
-{task_text}
-
-Relationship:
-{relationship_text}
-"""
-
-    user_info = ""
-
-    if name:
-        user_info = f"""
-Nama pengguna: {name}
-"""
-
-    prompt = f"""
-Kamu adalah chatbot informasi
-Dinas Komunikasi, Informatika dan Persandian Aceh.
-
-Jawab pertanyaan pengguna hanya berdasarkan konteks
-yang diberikan di bawah ini.
-
-Basis pengetahuan chatbot hanya berasal dari:
-1. Peraturan Gubernur Aceh Nomor 119 Tahun 2016
-2. Peraturan Gubernur Aceh Nomor 61 Tahun 2020
-
-ATURAN JAWABAN:
-
-1. Jawab langsung sesuai pertanyaan pengguna.
-2. Gunakan hanya informasi yang terdapat dalam konteks.
-3. Jangan menggunakan pengetahuan di luar konteks.
-4. Jangan mengarang informasi.
-5. Jangan menambahkan informasi yang tidak diperlukan
-   untuk menjawab pertanyaan.
-6. Jika pertanyaan meminta beberapa informasi,
-   jawab semua bagian yang diminta.
-7. Jika informasi yang dibutuhkan tidak ditemukan
-   dalam konteks, katakan bahwa informasi tersebut
-   tidak ditemukan dalam basis pengetahuan.
-8. Gunakan bahasa Indonesia yang jelas, ringkas,
-   dan mudah dipahami.
-9. Jangan menyebutkan "Vector Context", "Graph Context",
-   atau proses internal sistem kepada pengguna.
-10. Jika nama pengguna tersedia dan sesuai dengan konteks
-    percakapan, gunakan nama tersebut secara natural
-    dalam sapaan atau jawaban.
-11. Jangan menyebut nama pengguna secara berulang
-    jika tidak diperlukan.
-12. Jika pengguna memberikan sapaan seperti "hai" atau
-    "halo" bersama pertanyaan, balas sapaan tersebut
-    secara natural sebelum menjawab pertanyaannya.
-13. Jika menggunakan greeting, letakkan greeting sebagai
-    paragraf terpisah dari jawaban.
-
-14. Jangan memasukkan greeting ke dalam numbered list
-    atau bullet list.
-
-15. Jika jawaban berupa daftar, letakkan kalimat pembuka
-    terlebih dahulu, kemudian mulai daftar dari nomor 1.
-
-16. Gunakan Markdown secara konsisten:
-    - numbered list untuk daftar yang berurutan;
-    - bullet list untuk daftar yang tidak berurutan;
-    - paragraf terpisah untuk penjelasan;
-    - bold hanya untuk bagian yang penting.
-
-=== INFORMASI PENGGUNA ===
-{user_info}
-
-=== VECTOR CONTEXT ===
-{vector_text}
-
-=== GRAPH CONTEXT ===
-{graph_text}
-
-=== PERTANYAAN PENGGUNA ===
-{question}
-
-Berikan jawaban yang langsung menjawab pertanyaan.
-"""
-
-    return prompt.strip()
-
-
 def build_multi_question_prompt(
     question_results: list[dict],
-    name: str | None = None
+    name: str | None = None,
 ) -> str:
     """
-    Membuat prompt untuk beberapa sub-question.
+    Build one prompt for one or more decomposed questions.
 
-    Setiap pertanyaan memiliki context masing-masing
-    dan context tidak boleh dicampur antar pertanyaan.
+    Each question keeps its own retrieval context so evidence from one
+    question cannot accidentally answer another question.
     """
-
-    question_sections = ""
+    sections = []
 
     for index, item in enumerate(question_results, start=1):
         question = item["question"]
         context = item["context"]
+        vector_context = context.get("vector_context") or []
+        graph_context = context.get("graph_context") or []
 
-        vector_context = context.get("vector_context", [])
-        graph_context = context.get("graph_context")
+        vector_lines = []
+        for result_index, result in enumerate(vector_context, start=1):
+            vector_lines.append(
+                "\n".join([
+                    f"[Vector Evidence {result_index}]",
+                    f"Regulasi: {result.get('regulation_number')}",
+                    f"Pasal: {result.get('pasal')}",
+                    f"Ayat: {result.get('ayat')}",
+                    f"Halaman: {result.get('page')}",
+                    f"Isi: {result.get('content')}",
+                ])
+            )
 
-        vector_text = ""
+        graph_lines = []
+        for result_index, item in enumerate(graph_context, start=1):
+            entity = item.get("entity")
+            intent = item.get("intent")
+            graph = item.get("context") or {}
 
-        if vector_context:
-            for i, result in enumerate(
-                vector_context,
-                start=1
-            ):
-                vector_text += f"""
-[Vector Result {i}]
-Regulasi: {result.get("regulation_number")}
-Pasal: {result.get("pasal")}
-Ayat: {result.get("ayat")}
-Halaman: {result.get("page")}
-Isi: {result.get("content")}
-"""
+            lines = [
+                f"[Graph Evidence {result_index}]",
+                f"Entity: {entity}",
+                f"Intent: {intent}",
+            ]
 
-        graph_text = ""
+            organizations = graph.get("organizations") or []
+            units = graph.get("units") or []
+            parent_units = graph.get("parent_units") or []
+            children = graph.get("children") or []
+            leaders = graph.get("leaders") or []
+            parents = graph.get("parents") or []
+            tasks = graph.get("tasks") or []
 
-        if graph_context:
-            for i, item in enumerate(graph_context, start=1):
-                entity = item.get("entity")
-                intent = item.get("intent")
-                graph = item.get("context", {})
+            if organizations:
+                lines.append(f"Organisasi: {organizations}")
 
-                tasks = graph.get("tasks", [])
-                children = graph.get("children", [])
-                parents = graph.get("parents", [])
-                parent_units = graph.get("parent_units", [])
+            if units:
+                lines.append(f"Unit: {units}")
 
-                task_text = ""
-                child_text = ""
-                parent_text = ""
-                relationship_text = ""
+            if parent_units:
+                lines.append(f"Parent Unit: {parent_units}")
 
-                # Tugas
-                for task in tasks:
-                    if not task.get("name"):
-                        continue
+            valid_leaders = [
+                leader for leader in leaders
+                if leader.get("name")
+            ]
+            if valid_leaders:
+                lines.append("Pimpinan:")
+                for leader in valid_leaders:
+                    lines.append(
+                        f"- {leader.get('name')} | "
+                        f"Regulasi: {leader.get('regulation')} | "
+                        f"Pasal: {leader.get('pasal')} | "
+                        f"Ayat: {leader.get('ayat')} | "
+                        f"Halaman: {leader.get('page')}"
+                    )
 
-                    task_text += f"""
-        - {task.get("name")}
-        Sumber: {task.get("regulation")}
-        Pasal: {task.get("pasal")}
-        Ayat: {task.get("ayat")}
-        Halaman: {task.get("page")}
-        """
-
-                # Unit di dalam
-                for child in children:
-                    if not child.get("name"):
-                        continue
-
-                    child_text += f"""
-        - {child.get("name")}
-        Sumber: {child.get("regulation")}
-        Pasal: {child.get("pasal")}
-        Ayat: {child.get("ayat")}
-        Halaman: {child.get("page")}
-        """
-
-                # Parent position
+            if parents:
+                lines.append("Parent:")
                 for parent in parents:
-                    if not parent.get("name"):
-                        continue
+                    lines.append(
+                        f"- {parent.get('name')} | "
+                        f"Regulasi: {parent.get('regulation')} | "
+                        f"Pasal: {parent.get('pasal')} | "
+                        f"Ayat: {parent.get('ayat')} | "
+                        f"Halaman: {parent.get('page')}"
+                    )
 
-                    parent_text += f"""
-        - {parent.get("name")}
-        Sumber: {parent.get("regulation")}
-        Pasal: {parent.get("pasal")}
-        Ayat: {parent.get("ayat")}
-        Halaman: {parent.get("page")}
-        """
+            if children:
+                lines.append("Unit di dalam:")
+                for child in children:
+                    lines.append(
+                        f"- {child.get('name')} | "
+                        f"Regulasi: {child.get('regulation')} | "
+                        f"Pasal: {child.get('pasal')} | "
+                        f"Ayat: {child.get('ayat')} | "
+                        f"Halaman: {child.get('page')}"
+                    )
 
-                # Relationship
-                if intent == "relationship":
-                    organization = graph.get("organization")
-                    unit = graph.get("unit")
+            if tasks:
+                lines.append("Tugas:")
+                for task in tasks:
+                    lines.append(
+                        f"- {task.get('name')} | "
+                        f"Regulasi: {task.get('regulation')} | "
+                        f"Pasal: {task.get('pasal')} | "
+                        f"Ayat: {task.get('ayat')} | "
+                        f"Halaman: {task.get('page')}"
+                    )
 
-                    if organization and unit:
-                        relationship_text = f"""
-        Organisasi: {organization}
-        UPTD: {unit}
-        Relasi: MEMILIKI_UPTD
-        """
+            organization = graph.get("organization")
+            unit = graph.get("unit")
+            if organization and unit:
+                lines.extend([
+                    f"Relasi organisasi: {organization}",
+                    f"UPTD: {unit}",
+                    "Relasi: MEMILIKI_UPTD",
+                ])
 
-                graph_text += f"""
-        [Graph Entity {i}]
-        Entity: {entity}
-        Intent: {intent}
+            graph_lines.append("\n".join(lines))
 
-        Parent Unit:
-        {parent_units}
+        sections.append(
+            "\n".join([
+                "========================================",
+                f"PERTANYAAN {index}",
+                "========================================",
+                "",
+                f"Pertanyaan: {question}",
+                "",
+                "VECTOR EVIDENCE:",
+                "\n\n".join(vector_lines)
+                if vector_lines
+                else "Tidak ada evidence vector.",
+                "",
+                "GRAPH EVIDENCE:",
+                "\n\n".join(graph_lines)
+                if graph_lines
+                else "Tidak ada evidence graph.",
+            ])
+        )
 
-        Parent Position:
-        {parent_text}
-
-        Unit di dalam:
-        {child_text}
-
-        Tugas:
-        {task_text}
-
-        Relationship:
-        {relationship_text}
-        """
-
-        question_sections += f"""
-========================================
-PERTANYAAN {index}
-========================================
-
-Pertanyaan:
-{question}
-
-VECTOR CONTEXT:
-{vector_text if vector_text else "Tidak ada konteks vector yang relevan."}
-
-GRAPH CONTEXT:
-{graph_text if graph_text else "Tidak ada konteks graph yang relevan."}
-"""
-
-    user_info = ""
-
-    if name:
-        user_info = f"""
-Nama pengguna: {name}
-"""
+    user_info = f"Nama pengguna: {name}" if name else "Tidak ada."
 
     prompt = f"""
-Kamu adalah chatbot informasi
-Dinas Komunikasi, Informatika dan Persandian Aceh.
+Kamu adalah chatbot informasi Dinas Komunikasi, Informatika dan Persandian Aceh.
 
-Jawab pertanyaan pengguna hanya berdasarkan konteks
-yang diberikan di bawah ini.
+Jawab hanya berdasarkan evidence yang diberikan.
 
-Basis pengetahuan chatbot hanya berasal dari:
-
+Basis pengetahuan hanya berasal dari:
 1. Peraturan Gubernur Aceh Nomor 119 Tahun 2016
 2. Peraturan Gubernur Aceh Nomor 61 Tahun 2020
+
+ATURAN:
+1. Jawab setiap pertanyaan sesuai urutan.
+2. Setiap pertanyaan hanya boleh menggunakan evidence pada bagiannya sendiri.
+3. Jangan mencampurkan evidence antarpertanyaan.
+4. Gunakan evidence graph dan vector bersama-sama jika keduanya mendukung jawaban.
+5. Jika evidence tidak cukup untuk menjawab suatu pertanyaan, katakan bahwa informasi tersebut tidak ditemukan dalam basis pengetahuan.
+6. Jangan menggunakan pengetahuan di luar evidence.
+7. Jangan mengarang nama, jabatan, struktur, tugas, regulasi, pasal, ayat, atau fakta lain.
+8. Jangan menyebut proses internal seperti embedding, retrieval, vector database, graph database, atau evidence kepada pengguna.
+9. Jawab ringkas, jelas, dan natural dalam bahasa Indonesia.
+10. Jika nama pengguna tersedia, gunakan secara natural dan tidak berulang.
+11. Jika pertanyaan disertai sapaan, balas sapaan secara natural sebagai paragraf terpisah.
+12. Untuk daftar, gunakan Markdown secara konsisten.
+13. Jika evidence tidak cukup, katakan bahwa informasi tidak ditemukan dalam basis pengetahuan.
+14. Jangan gunakan pengetahuan dari luar basis pengetahuan.
+15. Jangan membuat informasi atau hubungan yang tidak ada di evidence.
+16. Pertahankan istilah dan bentuk hubungan sebagaimana didukung oleh evidence.
+17. Jangan memperkuat atau mengubah hubungan menjadi istilah yang lebih kuat.
+18. Jika evidence menyatakan "berada di bawah", gunakan "berada di bawah".
+19. Jika evidence menyatakan "bertanggung jawab kepada", gunakan "bertanggung jawab kepada".
+20. Jangan mengganti hubungan tersebut dengan istilah seperti "memiliki", "mengelola", atau "mengawasi" kecuali istilah tersebut memang dinyatakan atau didukung secara eksplisit oleh evidence.
 
 === INFORMASI PENGGUNA ===
 {user_info}
 
-=== ATURAN JAWABAN ===
+=== DATA PERTANYAAN ===
+{chr(10).join(sections)}
 
-1. Jawab semua pertanyaan yang diberikan.
-
-2. Jawab pertanyaan sesuai urutan pertanyaan.
-
-3. Setiap pertanyaan memiliki context masing-masing.
-   Gunakan hanya context yang berada pada bagian
-   pertanyaan tersebut.
-
-4. Jangan mencampurkan context dari satu pertanyaan
-   dengan pertanyaan lainnya.
-
-5. Jika sebuah pertanyaan memiliki context vector
-   dan graph, gunakan informasi tersebut secara
-   bersama jika memang relevan.
-
-6. Jika sebuah pertanyaan tidak memiliki context
-   yang relevan, katakan bahwa informasi tersebut
-   tidak ditemukan dalam basis pengetahuan.
-
-7. Jangan menggunakan pengetahuan di luar context
-   yang diberikan.
-
-8. Jangan mengarang informasi.
-
-9. Jangan menambahkan informasi yang tidak diperlukan
-   untuk menjawab pertanyaan.
-
-10. Jika pertanyaan meminta beberapa informasi,
-    pastikan seluruh bagian pertanyaan tersebut
-    dijawab.
-
-11. Gunakan bahasa Indonesia yang jelas, ringkas,
-    dan mudah dipahami.
-
-12. Jangan menyebutkan "Vector Context",
-    "Graph Context", embedding, retrieval,
-    database, atau proses internal sistem.
-
-13. Jika nama pengguna tersedia dan sesuai dengan konteks
-    percakapan, gunakan nama tersebut secara natural.
+Berikan jawaban akhir tanpa menjelaskan proses internal sistem.
 """
 
-    # Tambahan penutup string literal dan return statement yang sempat terpotong
-    prompt += f"""
-=== SECTIONS ===
-{question_sections}
-"""
     return prompt.strip()

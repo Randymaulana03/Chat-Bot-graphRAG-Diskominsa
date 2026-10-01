@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from groq import Groq  # 1. Pastikan import Groq ada
 
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.context_service import (
@@ -6,160 +7,22 @@ from app.services.context_service import (
     is_context_available,
 )
 from app.services.prompt_service import (
-    build_prompt,
     build_multi_question_prompt,
 )
 from app.services.gemini_services import generate_response
 from app.services.conversation_service import analyze_message
-from app.services.question_service import decompose_question
+from app.services.question_service import decompose_question_hybrid
+from app.core.config import settings
+
 
 
 
 router = APIRouter()
-
-def build_sources(
-    context: dict,
-    question: str
-) -> list[dict]:
-    sources = []
-    seen = set()
-
-    question_lower = question.lower()
-
-    is_structure_question = any(
-        keyword in question_lower
-        for keyword in [
-            "unit",
-            "seksi",
-            "subbagian",
-            "struktur",
-            "terdapat",
-            "di dalam",
-        ]
-    )
-
-    is_task_question = any(
-        keyword in question_lower
-        for keyword in [
-            "tugas",
-            "fungsi",
-        ]
-    )
-
-    is_parent_question = any(
-        keyword in question_lower
-        for keyword in [
-            "di bawah siapa",
-            "bertanggung jawab kepada siapa",
-            "dipimpin siapa",
-            "siapa yang memimpin",
-        ]
-    )
-
-    # VECTOR SOURCES
-    for result in context.get("vector_context", [])[:3]:
-        source = {
-            "regulation": result.get("regulation_number"),
-            "pasal": result.get("pasal"),
-            "ayat": result.get("ayat"),
-            "page": result.get("page"),
-        }
-
-        key = (
-            source["regulation"],
-            source["pasal"],
-            source["ayat"],
-            source["page"],
-        )
-
-        if key not in seen:
-            seen.add(key)
-            sources.append(source)
-
-    # GRAPH SOURCES
-    for item in context.get("graph_context") or []:
-        graph = item.get("context", {})
-
-        children = graph.get("children", [])
-        tasks = graph.get("tasks", [])
-        parents = graph.get("parents", [])
-
-        # STRUCTURE → Pasal 4
-        if is_structure_question:
-            for child in children:
-                if not child.get("regulation"):
-                    continue
-
-                source = {
-                    "regulation": child.get("regulation"),
-                    "pasal": child.get("pasal"),
-                    "ayat": child.get("ayat"),
-                    "page": child.get("page"),
-                }
-
-                key = (
-                    source["regulation"],
-                    source["pasal"],
-                    source["ayat"],
-                    source["page"],
-                )
-
-                if key not in seen:
-                    seen.add(key)
-                    sources.append(source)
-
-        # TASK / FUNCTION → Pasal 5
-        if is_task_question:
-            for task in tasks:
-                if not task.get("regulation"):
-                    continue
-
-                source = {
-                    "regulation": task.get("regulation"),
-                    "pasal": task.get("pasal"),
-                    "ayat": task.get("ayat"),
-                    "page": task.get("page"),
-                }
-
-                key = (
-                    source["regulation"],
-                    source["pasal"],
-                    source["ayat"],
-                    source["page"],
-                )
-
-                if key not in seen:
-                    seen.add(key)
-                    sources.append(source)
-
-        # PARENT / RELATION → Pasal 3
-        if is_parent_question:
-            for parent in parents:
-                if not parent.get("regulation"):
-                    continue
-
-                source = {
-                    "regulation": parent.get("regulation"),
-                    "pasal": parent.get("pasal"),
-                    "ayat": parent.get("ayat"),
-                    "page": parent.get("page"),
-                }
-
-                key = (
-                    question,
-                    source["regulation"],
-                    source["pasal"],
-                    source["page"],
-                )
-
-                if key not in seen:
-                    seen.add(key)
-                    sources.append(source)
-
-    return sources
+groq_client = Groq(api_key=settings.GROQ_API_KEY)
 
 def build_multi_question_sources(
-    question_results: list[dict]
+    question_results: list[dict],
+    max_sources_per_question: int = 2
 ) -> list[dict]:
     sources = []
     seen = set()
@@ -168,82 +31,24 @@ def build_multi_question_sources(
         question = item["question"]
         context = item["context"]
 
-        question_lower = question.lower()
-
-        is_task = any(
-            keyword in question_lower
-            for keyword in [
-                "tugas",
-                "fungsi",
-            ]
-        )
-
-        is_leadership = any(
-            keyword in question_lower
-            for keyword in [
-                "siapa yang memimpin",
-                "dipimpin siapa",
-                "di bawah siapa",
-                "bertanggung jawab kepada siapa",
-                "memimpin",
-            ]
-        )
-
-        is_relationship = any(
-            keyword in question_lower
-            for keyword in [
-                "hubungan",
-                "hubungannya",
-                "berhubungan dengan",
-                "kaitannya dengan",
-                "kaitan dengan",
-                "relasinya dengan",
-            ]
-        )
-
         # ==================================================
-        # VECTOR SOURCES
+        # 1. VECTOR SOURCES
         # ==================================================
+        # Tampilkan vector context jika vector_relevant True
+        # ATAU jika vector_relevant belum di-set eksplisit.
+        vector_relevant = context.get("vector_relevant")
+        if vector_relevant is not False:
+            vector_results = context.get("vector_context", []) or []
+        else:
+            vector_results = []
 
-        for result in context.get(
-            "vector_context",
-            []
-        ):
-            regulation = result.get(
-                "regulation_number"
-            )
-
+        for result in vector_results:
+            regulation = result.get("regulation_number")
             pasal = result.get("pasal")
             ayat = result.get("ayat")
             page = result.get("page")
 
             if not regulation:
-                continue
-
-            # ----------------------------------------------
-            # TASK / FUNCTION
-            # ----------------------------------------------
-            if is_task:
-                if not (
-                    pasal == "Pasal 5"
-                    and ayat == "(1)"
-                ):
-                    continue
-
-            # ----------------------------------------------
-            # LEADERSHIP
-            # ----------------------------------------------
-            elif is_leadership:
-                if pasal != "Pasal 3":
-                    continue
-
-            # ----------------------------------------------
-            # RELATIONSHIP
-            # ----------------------------------------------
-            elif is_relationship:
-                # Relationship saat ini ditangani oleh graph.
-                # Jangan mengambil vector source yang tidak
-                # secara eksplisit mendukung relationship.
                 continue
 
             source = {
@@ -267,129 +72,121 @@ def build_multi_question_sources(
                 sources.append(source)
 
         # ==================================================
-        # GRAPH SOURCES
+        # 2. GRAPH SOURCES
         # ==================================================
+        for graph_item in (context.get("graph_context") or []):
+            print("DEBUG GRAPH ITEM FOR SOURCE:", graph_item)
+            graph = graph_item.get("context", {}) or {}
+            intent = graph_item.get("intent")
 
-        for graph_item in (
-            context.get("graph_context") or []
-        ):
-            graph = graph_item.get(
-                "context",
-                {}
-            )
-
-            intent = graph_item.get(
-                "intent"
-            )
+            # Helper internal untuk append source agar DRY
+            def _add_graph_source(reg, pas, ay, pg):
+                if not reg:
+                    return
+                src = {
+                    "question": question,
+                    "regulation": reg,
+                    "pasal": pas,
+                    "ayat": ay,
+                    "page": pg,
+                }
+                src_key = (
+                    question,
+                    reg,
+                    pas,
+                    ay,
+                    pg,
+                )
+                if src_key not in seen:
+                    seen.add(src_key)
+                    sources.append(src)
 
             # ----------------------------------------------
             # TASK
             # ----------------------------------------------
             if intent == "task":
-                for task in graph.get(
-                    "tasks",
-                    []
-                ):
-                    regulation = task.get("regulation")
-                    pasal = task.get("pasal")
-                    ayat = task.get("ayat")
-                    page = task.get("page")
-
-                    if not regulation:
-                        continue
-
-                    if not pasal and not ayat and not page:
-                        continue
-
-                    source = {
-                        "question": question,
-                        "regulation": regulation,
-                        "pasal": pasal,
-                        "ayat": ayat,
-                        "page": page,
-                    }
-
-                    key = (
-                        question,
-                        source["regulation"],
-                        source["pasal"],
-                        source["ayat"],
-                        source["page"],
+                for task in graph.get("tasks", []) or []:
+                    _add_graph_source(
+                        task.get("regulation"),
+                        task.get("pasal"),
+                        task.get("ayat"),
+                        task.get("page"),
                     )
-
-                    if key not in seen:
-                        seen.add(key)
-                        sources.append(source)
 
             # ----------------------------------------------
             # LEADERSHIP
             # ----------------------------------------------
             elif intent == "leadership":
-                for parent in graph.get(
-                    "parents",
-                    []
-                ):
-                    regulation = parent.get(
-                        "regulation"
+                # Keduanya diperiksa: 'leaders' (dari unit leadership) dan 'parents'
+                for leader in graph.get("leaders", []) or []:
+                    _add_graph_source(
+                        leader.get("regulation"),
+                        leader.get("pasal"),
+                        leader.get("ayat"),
+                        leader.get("page"),
+                    )
+                for parent in graph.get("parents", []) or []:
+                    _add_graph_source(
+                        parent.get("regulation"),
+                        parent.get("pasal"),
+                        parent.get("ayat"),
+                        parent.get("page"),
                     )
 
-                    if not regulation:
-                        continue
-
-                    source = {
-                        "question": question,
-                        "regulation": regulation,
-                        "pasal": parent.get("pasal"),
-                        "ayat": parent.get("ayat"),
-                        "page": parent.get("page"),
-                    }
-
-                    key = (
-                        question,
-                        source["regulation"],
-                        source["pasal"],
-                        source["ayat"],
-                        source["page"],
+            # ----------------------------------------------
+            # PARENT
+            # ----------------------------------------------
+            elif intent == "parent":
+                for parent in graph.get("parents", []) or []:
+                    _add_graph_source(
+                        parent.get("regulation"),
+                        parent.get("pasal"),
+                        parent.get("ayat"),
+                        parent.get("page"),
+                    )
+                for leader in graph.get("leaders", []) or []:
+                    _add_graph_source(
+                        leader.get("regulation"),
+                        leader.get("pasal"),
+                        leader.get("ayat"),
+                        leader.get("page"),
                     )
 
-                    if key not in seen:
-                        seen.add(key)
-                        sources.append(source)
+            # ----------------------------------------------
+            # STRUCTURE
+            # ----------------------------------------------
+            elif intent == "structure":
+                for child in graph.get("children", []) or []:
+                    _add_graph_source(
+                        child.get("regulation"),
+                        child.get("pasal"),
+                        child.get("ayat"),
+                        child.get("page"),
+                    )
+
+            # ----------------------------------------------
+            # ORGANIZATION
+            # ----------------------------------------------
+            elif intent == "organization":
+                for leader in graph.get("leaders", []) or []:
+                    _add_graph_source(
+                        leader.get("regulation"),
+                        leader.get("pasal"),
+                        leader.get("ayat"),
+                        leader.get("page"),
+                    )
 
             # ----------------------------------------------
             # RELATIONSHIP
             # ----------------------------------------------
             elif intent == "relationship":
-                for graph_source in graph.get(
-                    "sources",
-                    []
-                ):
-                    regulation = graph_source.get(
-                        "regulation"
+                for graph_source in graph.get("sources", []) or []:
+                    _add_graph_source(
+                        graph_source.get("regulation"),
+                        None,
+                        None,
+                        None,
                     )
-
-                    if not regulation:
-                        continue
-
-                    source = {
-                        "question": question,
-                        "regulation": regulation,
-                        "pasal": None,
-                        "ayat": None,
-                        "page": None,
-                    }
-
-                    key = (
-                        question,
-                        source["regulation"],
-                        source["pasal"],
-                        source["ayat"],
-                        source["page"],
-                    )
-
-                    if key not in seen:
-                        seen.add(key)
-                        sources.append(source)
 
     return sources
 
@@ -406,8 +203,9 @@ def chat(request: ChatRequest):
             "sources": []
         }
 
-    questions = decompose_question(
-        conversation.question
+    questions = decompose_question_hybrid(
+        conversation.question,
+        groq_client=groq_client
     )
 
     print("DECOMPOSED QUESTIONS:", questions)
@@ -416,6 +214,15 @@ def chat(request: ChatRequest):
 
     for question in questions:
         context = build_context(question)
+        print("\n" + "=" * 50)
+        print("SOURCE INPUT")
+        print("=" * 50)
+
+        print("VECTOR CONTEXT:")
+        print(context.get("vector_context"))
+
+        print("\nGRAPH CONTEXT:")
+        print(context.get("graph_context"))
 
         question_results.append({
             "question": question,
@@ -456,14 +263,38 @@ def chat(request: ChatRequest):
     print(prompt)
 
     sources = build_multi_question_sources(
-    question_results
+        question_results
     )
 
+    print("\n" + "=" * 40)
+    print("FINAL SOURCES FROM API:")
+    print(sources)
+    print("=" * 40)
+
+    # 1. Jalankan LLM Synthesizer (Gemini) lebih dulu untuk mendapatkan jawaban
     try:
         answer = generate_response(prompt)
     except RuntimeError as e:
         answer = str(e)
 
+    # 2. Cek apakah jawaban Gemini menyatakan bahwa informasi TIDAK DITEMUKAN
+    not_found_keywords = [
+        "tidak ditemukan dalam basis pengetahuan",
+        "informasi tersebut tidak ditemukan",
+        "tidak menemukan informasi",
+        "tidak ada informasi"
+    ]
+    
+    is_not_found = any(keyword in answer.lower() for keyword in not_found_keywords)
+
+    # 3. Logika Filter Sumber:
+    # Jika jawaban bernilai "tidak ditemukan", PAKSA sources menjadi list kosong []
+    if is_not_found:
+        sources = []
+    else:
+        sources = build_multi_question_sources(question_results)
+
+    # 4. Return response ke API
     return {
         "answer": answer,
         "sources": sources
