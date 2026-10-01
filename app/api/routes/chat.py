@@ -24,18 +24,17 @@ def build_multi_question_sources(
     question_results: list[dict],
     max_sources_per_question: int = 2
 ) -> list[dict]:
-    sources = []
-    seen = set()
+    final_sources = []
 
     for item in question_results:
         question = item["question"]
         context = item["context"]
+        question_sources = []
+        seen = set()
 
         # ==================================================
         # 1. VECTOR SOURCES
         # ==================================================
-        # Tampilkan vector context jika vector_relevant True
-        # ATAU jika vector_relevant belum di-set eksplisit.
         vector_relevant = context.get("vector_relevant")
         if vector_relevant is not False:
             vector_results = context.get("vector_context", []) or []
@@ -57,6 +56,7 @@ def build_multi_question_sources(
                 "pasal": pasal,
                 "ayat": ayat,
                 "page": page,
+                "more_count": 0,
             }
 
             key = (
@@ -69,17 +69,15 @@ def build_multi_question_sources(
 
             if key not in seen:
                 seen.add(key)
-                sources.append(source)
+                question_sources.append(source)
 
         # ==================================================
         # 2. GRAPH SOURCES
         # ==================================================
         for graph_item in (context.get("graph_context") or []):
-            print("DEBUG GRAPH ITEM FOR SOURCE:", graph_item)
             graph = graph_item.get("context", {}) or {}
             intent = graph_item.get("intent")
 
-            # Helper internal untuk append source agar DRY
             def _add_graph_source(reg, pas, ay, pg):
                 if not reg:
                     return
@@ -89,6 +87,7 @@ def build_multi_question_sources(
                     "pasal": pas,
                     "ayat": ay,
                     "page": pg,
+                    "more_count": 0,
                 }
                 src_key = (
                     question,
@@ -99,11 +98,8 @@ def build_multi_question_sources(
                 )
                 if src_key not in seen:
                     seen.add(src_key)
-                    sources.append(src)
+                    question_sources.append(src)
 
-            # ----------------------------------------------
-            # TASK
-            # ----------------------------------------------
             if intent == "task":
                 for task in graph.get("tasks", []) or []:
                     _add_graph_source(
@@ -112,12 +108,7 @@ def build_multi_question_sources(
                         task.get("ayat"),
                         task.get("page"),
                     )
-
-            # ----------------------------------------------
-            # LEADERSHIP
-            # ----------------------------------------------
             elif intent == "leadership":
-                # Keduanya diperiksa: 'leaders' (dari unit leadership) dan 'parents'
                 for leader in graph.get("leaders", []) or []:
                     _add_graph_source(
                         leader.get("regulation"),
@@ -132,10 +123,6 @@ def build_multi_question_sources(
                         parent.get("ayat"),
                         parent.get("page"),
                     )
-
-            # ----------------------------------------------
-            # PARENT
-            # ----------------------------------------------
             elif intent == "parent":
                 for parent in graph.get("parents", []) or []:
                     _add_graph_source(
@@ -151,10 +138,6 @@ def build_multi_question_sources(
                         leader.get("ayat"),
                         leader.get("page"),
                     )
-
-            # ----------------------------------------------
-            # STRUCTURE
-            # ----------------------------------------------
             elif intent == "structure":
                 for child in graph.get("children", []) or []:
                     _add_graph_source(
@@ -163,10 +146,6 @@ def build_multi_question_sources(
                         child.get("ayat"),
                         child.get("page"),
                     )
-
-            # ----------------------------------------------
-            # ORGANIZATION
-            # ----------------------------------------------
             elif intent == "organization":
                 for leader in graph.get("leaders", []) or []:
                     _add_graph_source(
@@ -175,10 +154,6 @@ def build_multi_question_sources(
                         leader.get("ayat"),
                         leader.get("page"),
                     )
-
-            # ----------------------------------------------
-            # RELATIONSHIP
-            # ----------------------------------------------
             elif intent == "relationship":
                 for graph_source in graph.get("sources", []) or []:
                     _add_graph_source(
@@ -188,7 +163,23 @@ def build_multi_question_sources(
                         None,
                     )
 
-    return sources
+        # ==================================================
+        # 3. TRUNCATION PER QUESTION (MAX 2 + MORE_COUNT)
+        # ==================================================
+        total_found = len(question_sources)
+
+        if total_found > max_sources_per_question:
+            # Ambil 2 sumber teratas saja
+            truncated = question_sources[:max_sources_per_question]
+            # Hitung sisa sumber yang disembunyikan
+            remaining = total_found - max_sources_per_question
+            # Set field 'more_count' pada item sumber ke-2
+            truncated[-1]["more_count"] = remaining
+            final_sources.extend(truncated)
+        else:
+            final_sources.extend(question_sources)
+
+    return final_sources
 
 
 @router.post("/api/chat", response_model=ChatResponse)
