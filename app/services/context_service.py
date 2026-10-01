@@ -1,11 +1,9 @@
+import re
+
 from app.services.embedding_service import generate_embedding
-from app.services.vector_service import (
-    search_similar_chunks,
-    has_relevant_context,
-)
+from app.services.vector_service import search_similar_chunks
 from app.services.graph_service import (
     retrieve_graph_context,
-    is_graph_context_relevant,
 )
 
 
@@ -17,28 +15,34 @@ def build_context(question: str) -> dict:
         limit=5
     )
 
-    vector_relevant = has_relevant_context(vector_results)
-
     graph_result = retrieve_graph_context(question)
 
-    graph_relevant = is_graph_context_relevant(
-        question,
-        graph_result
+    vector_context = vector_results
+
+    # Untuk pertanyaan yang secara eksplisit meminta unit
+    # yang berada di bawah suatu unit, gunakan struktur graph
+    # sebagai sumber struktur. Vector result struktur dapat
+    # mencampur jabatan/kelompok jabatan dengan unit.
+    unit_below_question = bool(
+        re.search(
+            r"\bunit(?:\s+yang)?\s+berada\s+di\s+bawah\b",
+            question,
+            flags=re.IGNORECASE,
+        )
     )
 
-    if not graph_relevant:
-        graph_result = None
+    if unit_below_question and graph_result:
+        vector_context = []
 
     return {
         "question": question,
-        "vector_context": vector_results if vector_relevant else [],
+        "vector_context": vector_context,
         "graph_context": graph_result,
-        "vector_relevant": vector_relevant,
-        "graph_relevant": graph_relevant,
     }
 
+
 def is_context_available(context: dict) -> bool:
-    return (
-        context.get("vector_relevant", False)
-        or context.get("graph_relevant", False)
-    )
+    vector_context = context.get("vector_context") or []
+    graph_context = context.get("graph_context") or []
+
+    return bool(vector_context or graph_context)

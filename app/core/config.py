@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     NEO4J_USERNAME: str = ""
     NEO4J_PASSWORD: str = ""
     ALLOWED_ORIGINS: str = ""
+    GROQ_API_KEY: str = ""
+    GROQ_API_KEY2: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

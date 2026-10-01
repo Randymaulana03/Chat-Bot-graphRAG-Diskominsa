@@ -98,6 +98,11 @@ def analyze_message(text: str) -> ConversationResult:
     # Bersihkan bagian greeting dan nama
     question = _clean_question(text, greeting, name)
 
+    print("DEBUG RAW TEXT:", repr(text))
+    print("DEBUG GREETING:", greeting)
+    print("DEBUG NAME:", repr(name))
+    print("DEBUG CLEAN QUESTION:", repr(question))
+
     return ConversationResult(
         question=question,
         name=name,

@@ -6,7 +6,6 @@ supabase = create_client(
     settings.SUPABASE_KEY
 )
 
-SIMILARITY_THRESHOLD = 0.82
 
 
 def search_similar_chunks(
@@ -22,15 +21,6 @@ def search_similar_chunks(
     ).execute()
 
     return result.data
-
-
-def has_relevant_context(results: list[dict]) -> bool:
-    if not results:
-        return False
-
-    top_similarity = results[0].get("similarity", 0)
-
-    return top_similarity >= SIMILARITY_THRESHOLD
 
 
 def insert_document_chunk(
