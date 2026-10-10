@@ -12,9 +12,19 @@ def build_multi_question_prompt(
 
     for index, item in enumerate(question_results, start=1):
         question = item["question"]
-        context = item["context"]
+        context = item.get("context") or {}
+
         vector_context = context.get("vector_context") or []
         graph_context = context.get("graph_context") or []
+
+        # Sources dapat berasal dari item atau context.
+        sources = (
+            item.get("Sources")
+            or item.get("sources")
+            or context.get("Sources")
+            or context.get("sources")
+            or []
+        )
 
         vector_lines = []
         for result_index, result in enumerate(vector_context, start=1):
@@ -28,6 +38,32 @@ def build_multi_question_prompt(
                     f"Isi: {result.get('content')}",
                 ])
             )
+        source_lines = []
+        for source_index, source in enumerate(sources, start=1):
+            if isinstance(source, dict):
+                source_name = (
+                    source.get("name")
+                    or source.get("title")
+                    or source.get("source")
+                    or source.get("file_name")
+                    or source.get("filename")
+                    or "Tidak diketahui"
+                )
+
+                source_lines.append(
+                    "\n".join([
+                        f"[Source {source_index}]",
+                        f"Nama: {source_name}",
+                        f"Regulasi: {source.get('regulation_number', '')}",
+                        f"Pasal: {source.get('pasal', '')}",
+                        f"Ayat: {source.get('ayat', '')}",
+                        f"Halaman: {source.get('page', '')}",
+                    ])
+                )
+            else:
+                source_lines.append(
+                    f"[Source {source_index}] {source}"
+                )
 
         graph_lines = []
         for result_index, item in enumerate(graph_context, start=1):
@@ -134,6 +170,11 @@ def build_multi_question_prompt(
                 "\n\n".join(graph_lines)
                 if graph_lines
                 else "Tidak ada evidence graph.",
+                "",
+                "SOURCES FOUND:",
+                "\n\n".join(source_lines)
+                if source_lines
+                else "Tidak ada source.",
             ])
         )
 
@@ -169,6 +210,11 @@ ATURAN:
 18. Jika evidence menyatakan "berada di bawah", gunakan "berada di bawah".
 19. Jika evidence menyatakan "bertanggung jawab kepada", gunakan "bertanggung jawab kepada".
 20. Jangan mengganti hubungan tersebut dengan istilah seperti "memiliki", "mengelola", atau "mengawasi" kecuali istilah tersebut memang dinyatakan atau didukung secara eksplisit oleh evidence.
+21. Jangan menghilangkan sources yang tersedia pada bagian pertanyaan.
+22. Jika SOURCES FOUND tersedia, gunakan sources tersebut untuk informasi sumber jawaban.
+23. Jika SOURCES FOUND kosong, jangan membuat source baru.
+24. Jawab hanya apa yang ditanyakan oleh pengguna. Jangan membuat sub-pertanyaan baru atau menambahkan penjelasan mengenai unit/bidang lain kecuali diminta secara eksplisit.
+
 
 === INFORMASI PENGGUNA ===
 {user_info}
