@@ -8,7 +8,10 @@ driver = GraphDatabase.driver(
     auth=(
         settings.NEO4J_USERNAME,
         settings.NEO4J_PASSWORD
-    )
+    ),
+    max_connection_lifetime=300,     
+    liveness_check_timeout=30,       
+    max_connection_pool_size=50
 )
 
 

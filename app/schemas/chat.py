@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
+from typing import Optional
 
 
 class ChatRequest(BaseModel):
@@ -24,8 +25,9 @@ class Source(BaseModel):
     pasal: str | None = None
     ayat: str | None = None
     page: int | None = None
+    more_count: int = 0
 
 
 class ChatResponse(BaseModel):
     answer: str
-    sources: list[Source] = []
+    sources: list[Source] 

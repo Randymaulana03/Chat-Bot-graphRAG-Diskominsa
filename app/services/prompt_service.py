@@ -28,10 +28,11 @@ def build_multi_question_prompt(
 
         vector_lines = []
         for result_index, result in enumerate(vector_context, start=1):
+            reg_title = result.get('regulasi') or result.get('regulation_number') or result.get('regulation') or "Peraturan Gubernur Aceh"
             vector_lines.append(
                 "\n".join([
                     f"[Vector Evidence {result_index}]",
-                    f"Regulasi: {result.get('regulation_number')}",
+                    f"Regulasi: {reg_title}",
                     f"Pasal: {result.get('pasal')}",
                     f"Ayat: {result.get('ayat')}",
                     f"Halaman: {result.get('page')}",
@@ -214,7 +215,10 @@ ATURAN:
 22. Jika SOURCES FOUND tersedia, gunakan sources tersebut untuk informasi sumber jawaban.
 23. Jika SOURCES FOUND kosong, jangan membuat source baru.
 24. Jawab hanya apa yang ditanyakan oleh pengguna. Jangan membuat sub-pertanyaan baru atau menambahkan penjelasan mengenai unit/bidang lain kecuali diminta secara eksplisit.
-
+25. Jika pengguna menanyakan tugas dari Kepala Bidang [Nama Bidang], jawab mengenai kedudukan jabatannya (pemimpin bidang) nya dan bukan mengenai "Bidang" nya. Jangan membuat asumsi atau menambahkan informasi yang tidak ada di evidence.
+26. Jika tugas dan fungsi memiliki informasi yang beririsan/mirip, gabungkan menjadi satu alur penjelas yang ringkas dan hindari pengulangan kalimat di akhir jawaban.
+27. Jika pertanyaannya tentang tugas maka jawaban hanya menjelaskan tugas, bukan fungsi. Jika pertanyaannya tentang fungsi maka jawaban hanya menjelaskan fungsi, bukan tugas. Jika pertanyaannya tentang tugas dan fungsi maka jawaban menjelaskan keduanya.
+28. Jika pertanyaannya tentang "siapa" bukan berarti menjawab "nama" orang, tetapi menjawab "siapa" yang dimaksud dalam konteks pertanyaan. Misalnya, jika pertanyaannya "Siapa yang bertanggung jawab atas bidang TIK?", maka jawabannya adalah "Kepala Bidang Teknologi Informasi dan Komunikasi" dan bukan nama orangnya.
 
 === INFORMASI PENGGUNA ===
 {user_info}

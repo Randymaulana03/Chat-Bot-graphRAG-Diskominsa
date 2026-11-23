@@ -530,19 +530,20 @@ def get_unit_parent_unit_context(unit_name: str):
 
     OPTIONAL MATCH (parent:Unit)-[:MEMILIKI_UNIT]->(unit)
 
+    # OPTIONAL MATCH (unit)-[under_rel:BERADA_DI_BAWAH]->(position:Position)
+    # OPTIONAL MATCH (unit)-[:BERASAL_DARI]->(source:Source)
+    OPTIONAL MATCH (parent)-[:BERASAL_DARI]->(parent_source:Source)
     OPTIONAL MATCH (unit)-[under_rel:BERADA_DI_BAWAH]->(position:Position)
-
-    OPTIONAL MATCH (unit)-[:BERASAL_DARI]->(source:Source)
 
     RETURN
         unit.name AS unit,
 
         collect(DISTINCT {
             name: parent.name,
-            regulation: source.regulation,
-            pasal: source.pasal,
-            ayat: source.ayat,
-            page: source.page
+            regulation: parent_source.regulation, 
+            pasal: parent_source.pasal,
+            ayat: parent_source.ayat,
+            page: parent_source.page
         }) AS parents,
 
         collect(DISTINCT {

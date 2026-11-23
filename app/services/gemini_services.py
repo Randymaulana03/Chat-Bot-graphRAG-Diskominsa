@@ -16,8 +16,8 @@ def generate_response(prompt: str) -> str:
     try:
         interaction = client.interactions.create(
             # model="gemini-3.8-flash",
-            # model="gemini-3.6-flash",
-            model="gemini-3.1-flash-lite",
+            # model="gemini-3.6-flash", 200 req per hari
+            model="gemini-3.1-flash-lite", # 1500 req per hari dan 30 req per menit
 
             input=prompt,
         )

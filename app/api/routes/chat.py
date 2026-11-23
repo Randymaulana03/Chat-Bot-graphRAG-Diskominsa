@@ -17,6 +17,7 @@ from app.core.config import settings
 
 
 
+
 router = APIRouter()
 groq_client = Groq(api_key=settings.GROQ_API_KEY)
 
@@ -42,7 +43,7 @@ def build_multi_question_sources(
             vector_results = []
 
         for result in vector_results:
-            regulation = result.get("regulation_number")
+            regulation = result.get("regulasi") or result.get("regulation_number") or result.get("regulation")
             pasal = result.get("pasal")
             ayat = result.get("ayat")
             page = result.get("page")
@@ -253,15 +254,6 @@ def chat(request: ChatRequest):
     print("MULTI QUESTION PROMPT:")
     print(prompt)
 
-    sources = build_multi_question_sources(
-        question_results
-    )
-
-    print("\n" + "=" * 40)
-    print("FINAL SOURCES FROM API:")
-    print(sources)
-    print("=" * 40)
-
     # 1. Jalankan LLM Synthesizer (Gemini) lebih dulu untuk mendapatkan jawaban
     try:
         answer = generate_response(prompt)
@@ -284,7 +276,12 @@ def chat(request: ChatRequest):
         sources = []
     else:
         sources = build_multi_question_sources(question_results)
-
+    
+    print("\n" + "=" * 40)
+    print("FINAL SOURCES FROM API:")
+    print(sources)
+    print("=" * 40)
+    
     # 4. Return response ke API
     return {
         "answer": answer,

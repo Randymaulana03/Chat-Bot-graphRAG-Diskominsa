@@ -4,7 +4,7 @@ from groq import Groq, APIError
 
 # RegEx Pattern untuk mendeteksi keberadaan kata rujukan (termasuk persona)
 COREFERENCE_PATTERNS = (
-    r"(-nya\b|\bnya\b|\bdia\b|\bbeliau\b|\bia\b|\btersebut\b|\byang memimpin\b|\bpimpinannya\b)"
+    r"(-nya\b|\bnya\b|\bdia\b|\bbeliau\b|\bia\b|\btersebut\b|\byang memimpin\b|\bpimpinannya\b|\bkepalanya\b|\bpimpinan\b|\bpemimpin\b)"
 )
 
 KNOWN_ENTITIES = [
@@ -79,6 +79,7 @@ Tugasmu:
    - "UPTD" -> "UPTD Statistik"
    - "TIK" -> "Bidang Teknologi Informasi dan Komunikasi"
    - "Persandian" -> "Bidang Persandian"
+   - "diskominsa" -> "Dinas Komunikasi, Informatika dan Persandian Aceh"
 4. Setiap pertanyaan HARUS menggunakan bahasa Indonesia yang formal, diawali kata tanya baku (seperti "Apakah", "Apa", "Siapa"), dan diakhiri tanda tanya.
 5. Kembalikan HANYA format JSON valid dengan kunci "sub_questions" yang berisi array string pertanyaan.
 
@@ -105,15 +106,38 @@ def normalize_question(question: str) -> str:
     )
 
     question = re.sub(
-        r"\bTIK\b(?!\s+Pemerintah\b)",
+        r"\b(?:bidang\s+)?TIK\b(?!\s+Pemerintah\b)",
         "Bidang Teknologi Informasi dan Komunikasi",
-        question,
-        flags=re.IGNORECASE,
+        question, flags=re.IGNORECASE,
     )
 
     question = re.sub(
         r"\be-gov\b|\be-government\b",
         "E-Government",
+        question,
+        flags=re.IGNORECASE,
+    )
+    question = re.sub(
+        r"\bSeksi\s+Infrastruktur\b(?!\s+dan\s+Teknologi\b)",
+        "Seksi Infrastruktur dan Teknologi",
+        question,
+        flags=re.IGNORECASE,
+    )
+    question = re.sub(
+        r"\bSeksi\s+Keamanan\s+Informasi\b(?!\s+E-Government\b)",
+        "Seksi Keamanan Informasi E-Government",
+        question,
+        flags=re.IGNORECASE,
+    )
+    question = re.sub(
+        r"\bSeksi\s+Pengelolaan\s+Data\b(?!\s+dan\s+Integrasi\b)",
+        "Seksi Pengelolaan Data dan Integrasi Sistem Informasi",
+        question,
+        flags=re.IGNORECASE,
+    )
+    question = re.sub(
+        r"\bdiskominsa(?:\s+aceh)?\b",
+        "Dinas Komunikasi, Informatika dan Persandian Aceh",
         question,
         flags=re.IGNORECASE,
     )
@@ -127,7 +151,34 @@ def _ensure_question_mark(question: str) -> str:
         question += "?"
     return question
 
+# ==============================================================================
+# KODE BARU: ENTITY PROTECTION HELPERS
+# ==============================================================================
+def _protect_entities(text: str) -> tuple[str, dict[str, str]]:
+    """Mengganti entitas dari KNOWN_ENTITIES dengan token sementara agar tidak terbelah oleh RegEx split."""
+    protected_text = text
+    mask_map = {}
 
+    # Urutkan entitas dari string terpanjang agar entitas panjang terlindungi lebih dulu
+    sorted_entities = sorted(KNOWN_ENTITIES, key=len, reverse=True)
+
+    for idx, entity in enumerate(sorted_entities):
+        pattern = re.compile(rf"\b{re.escape(entity)}\b", re.IGNORECASE)
+        if pattern.search(protected_text):
+            token = f"__ENTITY_TOKEN_{idx}__"
+            mask_map[token] = entity
+            protected_text = pattern.sub(token, protected_text)
+
+    return protected_text, mask_map
+
+
+def _restore_entities(text: str, mask_map: dict[str, str]) -> str:
+    """Mengembalikan token sementara ke nama entitas resminya."""
+    restored_text = text
+    for token, entity in mask_map.items():
+        restored_text = restored_text.replace(token, entity)
+    return restored_text
+    
 def _normalize_questions(questions: list[str]) -> list[str]:
     result = []
     for question in questions:
@@ -427,32 +478,39 @@ def decompose_question_hybrid(question: str, groq_client: Groq = None) -> list[s
     if not question:
         return []
 
+
     clean_q = _clean_preamble(question)
     normalized_q = normalize_question(clean_q)
 
-    # 1. FAST PATH: RegEx
-    result = _split_explicit_questions(normalized_q)
+    protected_q, mask_map = _protect_entities(normalized_q)
+
+    # 1. FAST PATH: RegEx (Menjalankan RegEx pada teks yang sudah diproteksi)
+    result = _split_explicit_questions(protected_q)
     if result:
         print("[DECOMPOSER] Used: RegEx Explicit Split")
-        return resolve_question_context(result)
+        restored = [_restore_entities(q, mask_map) for q in result]
+        return resolve_question_context(restored)
 
-    result = _split_question_sentences(normalized_q)
+    result = _split_question_sentences(protected_q)
     if result:
         print("[DECOMPOSER] Used: RegEx Sentence Split")
-        return resolve_question_context(result)
+        restored = [_restore_entities(q, mask_map) for q in result]
+        return resolve_question_context(restored)
 
-    result = _split_shared_question(normalized_q)
+    result = _split_shared_question(protected_q)
     if result:
         print("[DECOMPOSER] Used: RegEx Shared Split")
-        return resolve_question_context(result)
+        restored = [_restore_entities(q, mask_map) for q in result]
+        return resolve_question_context(restored)
 
-    # 2. SMART PATH: Groq LLM
+    # PERUBAHAN 2: Kembalikan teks entitas jika tidak terpecah
     if groq_client:
         print("[DECOMPOSER] Used: Groq LLM Fallback")
         sub_qs = _decompose_with_groq(clean_q, groq_client)
         return resolve_question_context(sub_qs)
 
-    return [_ensure_question_mark(normalized_q)]
+    restored_single = _restore_entities(protected_q, mask_map)
+    return [_ensure_question_mark(restored_single)]
 
 
 def decompose_question(question: str) -> list[str]:
