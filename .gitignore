@@ -1,15 +1,23 @@
 .env
 .venv/
+venv_clean/
 __pycache__/
 *.pyc
-# Local test scripts
+node_modules/
+
+# Local test & ingestion scripts
 test_*.py
+model_cek.py
+run_ingestion.py
+verifikasi_chunk.py
 
-# Local uploaded PDFs
+# Local uploaded PDFs & backups
 ._uploads_*
+*.backup
 
-# Local notes
+# Local notes & temp files
 Model embedding.txt
 Neo4j-24ee2aa6-Created-2026-09-17.txt
 Supabase & Neo4.txt
 object.txt
+supabase/
